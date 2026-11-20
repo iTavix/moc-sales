@@ -1,0 +1,484 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vendite MOC iTavix</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="logo.png">
+<script src="https://cdn.tailwindcss.com/3.4.16"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+<script src="data.js" onerror="window.MOC_SALES=null"></script>
+<style>
+  :root{
+    --bg:#f5f5f7; --card:#ffffff; --ink:#1d1d1f; --muted:#6e6e73; --line:#e5e5ea; --grid:#ececf0;
+    --warn:#c93400; --warn-bg:#fff3e8; --ok:#1f8a3c;
+    --c0:#0071e3; --c1:#f56300; --c2:#30a14e; --c3:#a14fd3; --c4:#d6336c; --c5:#0f9fa8;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#000000; --card:#1c1c1e; --ink:#f5f5f7; --muted:#98989d; --line:#2c2c2e; --grid:#262628;
+      --warn:#ff9f0a; --warn-bg:#2b1d08; --ok:#32d74b;
+      --c0:#2997ff; --c1:#ff8a30; --c2:#3dd166; --c3:#c27bf0; --c4:#ff5c8a; --c5:#33c6cf;
+    }
+  }
+  html,body{background:var(--bg);color:var(--ink);}
+  body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Arial,sans-serif;-webkit-font-smoothing:antialiased;}
+  .grid > *{min-width:0}
+  #chMonthly,#chCumul,#chCountries{width:100%;overflow:hidden}
+  svg{display:block}
+  .card{background:var(--card);border-radius:18px;box-shadow:0 1px 2px rgba(0,0,0,.04),0 4px 20px rgba(0,0,0,.04);}
+  .muted{color:var(--muted)} .line{border-color:var(--line)}
+  .num{font-variant-numeric:tabular-nums;}
+  .warn{color:var(--warn)}
+  .kpi-warn{background:var(--warn-bg)}
+  .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  table{border-collapse:collapse;width:100%}
+  th{font-weight:500;color:var(--muted);font-size:12px;text-align:left;white-space:nowrap}
+  td,th{padding:10px 12px;border-bottom:1px solid var(--line)}
+  td{white-space:nowrap;font-size:14px}
+  tr:last-child td{border-bottom:none}
+  .r{text-align:right}
+  .dot{display:inline-block;width:10px;height:10px;border-radius:50%}
+  #tip{position:fixed;pointer-events:none;z-index:50;background:var(--card);color:var(--ink);border:1px solid var(--line);
+       border-radius:12px;padding:10px 12px;font-size:13px;box-shadow:0 8px 30px rgba(0,0,0,.15);opacity:0;transition:opacity .12s;max-width:260px}
+  .axis text{fill:var(--muted);font-size:11px}
+  .axis path,.axis line{stroke:var(--line)}
+  .grid line{stroke:var(--grid)} .grid path{display:none}
+  #drop{border:2px dashed var(--line);transition:border-color .15s,background .15s}
+  #drop.over{border-color:var(--c0);background:color-mix(in srgb,var(--c0) 8%,transparent)}
+  .btn{border:1px solid var(--line);border-radius:999px;padding:6px 14px;font-size:13px;background:var(--card)}
+  .btn:hover{border-color:var(--muted)}
+</style>
+</head>
+<body>
+<div id="tip"></div>
+<main class="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
+
+  <header class="flex items-center justify-between gap-4 mb-6">
+    <div class="flex items-center gap-3 min-w-0">
+      <img src="logo.png" alt="iTavix" class="h-9 w-auto shrink-0" onerror="this.remove()">
+      <div class="min-w-0">
+        <div class="text-xs uppercase tracking-wider muted">Rebrickable · MOC Sales</div>
+        <div id="updated" class="text-xs muted"></div>
+      </div>
+    </div>
+    <div class="flex gap-2 shrink-0">
+      <button id="btnPublished" class="btn hidden">Dati pubblicati</button>
+      <label class="btn cursor-pointer">Carica CSV<input id="file" type="file" accept=".csv,text/csv" class="hidden"></label>
+    </div>
+  </header>
+
+  <!-- stato vuoto -->
+  <section id="empty" class="hidden">
+    <div id="drop" class="card p-10 sm:p-16 text-center cursor-pointer">
+      <div class="text-4xl mb-3">⇪</div>
+      <p class="text-lg font-medium">Trascina qui l'export CSV delle vendite da Rebrickable</p>
+      <p class="muted text-sm mt-2">oppure fai clic per sceglierlo. Il file viene letto solo nel browser e non lascia il dispositivo.</p>
+    </div>
+    <div id="error" class="hidden card kpi-warn warn p-5 mt-4 text-sm"></div>
+  </section>
+
+  <!-- dashboard -->
+  <section id="dash" class="hidden space-y-6">
+    <div>
+      <h1 id="headline" class="text-2xl sm:text-3xl font-semibold leading-snug tracking-tight"></h1>
+      <div id="notes" class="mt-3 space-y-1 text-sm warn"></div>
+    </div>
+
+    <div id="kpis" class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4"></div>
+    <div id="mocs" class="grid gap-3 sm:gap-4"></div>
+
+    <div class="card p-5 sm:p-6">
+      <div class="flex flex-wrap items-baseline justify-between gap-2 mb-3">
+        <h2 class="text-lg font-semibold">Vendite al mese</h2>
+        <div class="legend flex flex-wrap gap-4 text-sm muted"></div>
+      </div>
+      <div id="chMonthly"></div>
+    </div>
+
+    <div class="card p-5 sm:p-6">
+      <div class="flex flex-wrap items-baseline justify-between gap-2 mb-3">
+        <h2 class="text-lg font-semibold">Netto cumulato</h2>
+        <div class="legend flex flex-wrap gap-4 text-sm muted"></div>
+      </div>
+      <div id="chCumul"></div>
+    </div>
+
+    <div class="grid xl:grid-cols-2 gap-6">
+      <div class="card p-5 sm:p-6">
+        <div class="flex flex-wrap items-baseline justify-between gap-2 mb-3">
+          <h2 class="text-lg font-semibold">Paesi degli acquirenti</h2>
+          <span class="text-sm muted">top 10</span>
+        </div>
+        <div id="chCountries"></div>
+      </div>
+      <div class="card p-5 sm:p-6">
+        <h2 class="text-lg font-semibold mb-3">Da dove arrivano gli acquirenti</h2>
+        <div class="scroll"><table id="tbSpot"></table></div>
+      </div>
+    </div>
+
+    <div class="card p-5 sm:p-6">
+      <h2 class="text-lg font-semibold mb-3">Ultime vendite</h2>
+      <div class="scroll"><table id="tbLast"></table></div>
+    </div>
+
+    <footer class="text-xs muted text-center pt-4 pb-8">
+      Le righe rimborsate sono escluse da ogni calcolo. Netto = prezzo − commissione Rebrickable.
+    </footer>
+  </section>
+</main>
+
+<script>
+/* ---------- Configurazione ---------- */
+const MOC_NAMES = {
+  'MOC-231155': 'PP Apartment',
+  'MOC-272041': '60511 Vintage Steam Train Winter Edition',
+};
+const REQUIRED = ['order_number','moc__set_num','purchased','currency__code','cost','commission',
+  'is_commission_paid','is_refunded','invoice','buyer_country','spot','referrer'];
+const SPOT_LABELS = {
+  search:'Ricerca', search_all:'Ricerca (tutto)', search_global:'Ricerca globale',
+  setalts_mods:'Alternative del set', likedmocs_user:'MOC piaciute', hottest:'Più popolari',
+  newest:'Più recenti', designer_mocs:'Altre MOC del designer', '':'diretto / n.d.'
+};
+
+/* ---------- Formattazione ---------- */
+const eur = new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR'});
+const eurShort = v => eur.format(v);
+const MONTHS = ['gen','feb','mar','apr','mag','giu','lug','ago','set','ott','nov','dic'];
+const fmtDate = d => { if(!d) return '—'; const [y,m,g] = d.split('-'); return `${+g} ${MONTHS[+m-1]} ${y}`; };
+const fmtMonth = k => { const [y,m] = k.split('-'); return `${MONTHS[+m-1]} ${y.slice(2)}`; };
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const color = i => `var(--c${i % 6})`;
+const addDays = (d, n) => { const t = new Date(d + 'T00:00:00Z'); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0,10); };
+
+/* ---------- CSV ---------- */
+function parseCSV(text){
+  text = text.replace(/^﻿/, '');
+  const rows = []; let row = [], f = '', q = false;
+  for (let i = 0; i < text.length; i++){
+    const c = text[i];
+    if (q){
+      if (c === '"'){ if (text[i+1] === '"'){ f += '"'; i++; } else q = false; }
+      else f += c;
+    } else if (c === '"') q = true;
+    else if (c === ','){ row.push(f); f = ''; }
+    else if (c === '\n' || c === '\r'){
+      if (c === '\r' && text[i+1] === '\n') i++;
+      row.push(f); if (row.some(x => x !== '')) rows.push(row); row = []; f = '';
+    } else f += c;
+  }
+  row.push(f); if (row.some(x => x !== '')) rows.push(row);
+  return rows;
+}
+// riduce sempre alle sole colonne della specifica (niente dati personali in memoria)
+function toRecords(header, body){
+  const missing = REQUIRED.filter(c => !header.includes(c));
+  if (missing.length) return { missing };
+  const ix = REQUIRED.map(c => header.indexOf(c));
+  return { records: body.map(r => Object.fromEntries(REQUIRED.map((c,k) => [c, (r[ix[k]] ?? '').trim()]))) };
+}
+
+/* ---------- Calcoli ---------- */
+function compute(all){
+  const refunded = all.filter(r => r.is_refunded === 'True').length;
+  let rows = all.filter(r => r.is_refunded !== 'True');
+  const currencies = [...new Set(rows.map(r => r.currency__code || 'n.d.'))];
+  const otherCur = rows.filter(r => r.currency__code !== 'EUR').length;
+  rows = rows.filter(r => r.currency__code === 'EUR');   // non si sommano valute diverse
+  rows.forEach(r => {
+    r.date = r.purchased.slice(0,10);
+    r.c = parseFloat(r.cost) || 0;
+    r.k = parseFloat(r.commission) || 0;
+    r.net = r.c - r.k;
+  });
+  rows.sort((a,b) => a.purchased < b.purchased ? -1 : a.purchased > b.purchased ? 1 : 0);
+  if (!rows.length) return { empty:true, refunded, currencies, otherCur };
+
+  const lastAll = rows[rows.length-1].date;
+  const cut30 = addDays(lastAll, -30);
+  const ids = [...new Set(rows.map(r => r.moc__set_num))];
+  const mocs = ids.map(id => {
+    const rs = rows.filter(r => r.moc__set_num === id);
+    const sum = (a, f) => a.reduce((s,r) => s + f(r), 0);
+    return {
+      id, rows: rs,
+      orders: rs.length,
+      gross: sum(rs, r => r.c),
+      net: sum(rs, r => r.net),
+      due: sum(rs.filter(r => r.is_commission_paid !== 'True'), r => r.k),
+      price: rs[0].c,
+      commissionPct: rs[0].c ? rs[0].k / rs[0].c : 0,
+      first: rs[0].date, last: rs[rs.length-1].date,
+      orders30: rs.filter(r => r.date > cut30).length,
+    };
+  });
+  mocs.sort((a,b) => a.first < b.first ? -1 : 1);       // colore fisso: ordine di lancio
+  mocs.forEach((m,i) => m.ci = i);
+
+  const commonStart = mocs.reduce((d,m) => m.first > d ? m.first : d, mocs[0].first);
+  mocs.forEach(m => {
+    const rc = m.rows.filter(r => r.date >= commonStart);
+    m.ordersCommon = rc.length;
+    m.netCommon = rc.reduce((s,r) => s + r.net, 0);
+  });
+
+  const tot = ['orders','gross','net','due'].reduce((o,k) => (o[k] = mocs.reduce((s,m) => s + m[k], 0), o), {});
+
+  // mensile, mesi vuoti compresi
+  const months = [];
+  let [y, mo] = rows[0].date.slice(0,7).split('-').map(Number);
+  const endKey = lastAll.slice(0,7);
+  while (true){
+    const key = `${y}-${String(mo).padStart(2,'0')}`;
+    months.push({ key, by: Object.fromEntries(mocs.map(m => [m.id, {orders:0, net:0}])) });
+    if (key === endKey) break;
+    if (++mo > 12){ mo = 1; y++; }
+  }
+  const mIdx = Object.fromEntries(months.map((m,i) => [m.key, i]));
+  rows.forEach(r => { const b = months[mIdx[r.date.slice(0,7)]].by[r.moc__set_num]; b.orders++; b.net += r.net; });
+
+  // cumulato
+  mocs.forEach(m => { let n = 0, c = 0; m.cumul = m.rows.map(r => ({ date:r.date, net:(n += r.net), count:++c })); });
+
+  // paesi
+  const cmap = {};
+  rows.forEach(r => { const c = r.buyer_country || '??'; (cmap[c] ??= Object.fromEntries(mocs.map(m => [m.id,0])))[r.moc__set_num]++; });
+  const countries = Object.entries(cmap).map(([c,by]) => ({ c, by, total: Object.values(by).reduce((a,b)=>a+b,0) }))
+    .sort((a,b) => b.total - a.total || a.c.localeCompare(b.c));
+
+  // provenienza
+  const smap = {};
+  rows.forEach(r => { const s = r.spot || ''; (smap[s] ??= Object.fromEntries(mocs.map(m => [m.id,0])))[r.moc__set_num]++; });
+  const spots = Object.entries(smap).map(([s,by]) => ({ s, by, total: Object.values(by).reduce((a,b)=>a+b,0) }))
+    .sort((a,b) => b.total - a.total);
+
+  return { rows, mocs, tot, months, countries, spots, commonStart, lastAll, refunded, currencies, otherCur };
+}
+
+/* ---------- Rendering ---------- */
+let state = null;
+const $ = s => document.querySelector(s);
+const tip = $('#tip');
+function showTip(ev, html){
+  tip.innerHTML = html; tip.style.opacity = 1;
+  const w = tip.offsetWidth, h = tip.offsetHeight;
+  let x = ev.clientX + 14, y = ev.clientY + 14;
+  if (x + w > innerWidth - 8) x = ev.clientX - w - 14;
+  if (y + h > innerHeight - 8) y = ev.clientY - h - 14;
+  tip.style.left = Math.max(8,x) + 'px'; tip.style.top = Math.max(8,y) + 'px';
+}
+const hideTip = () => tip.style.opacity = 0;
+const mocLabel = m => `<span class="dot" style="background:${color(m.ci)}"></span> ${esc(m.id)}`;
+
+function render(D){
+  const { mocs, tot } = D;
+
+  // frase di sintesi
+  let h = `In totale <b>${tot.orders}</b> vendite per <b>${eur.format(tot.net)}</b> netti.`;
+  if (mocs.length > 1){
+    const newest = mocs.reduce((a,m) => m.first > a.first ? m : a, mocs[0]);
+    const others = mocs.filter(m => m !== newest);
+    h += ` Dal lancio di ${esc(newest.id)} (<b>${fmtDate(D.commonStart)}</b>) ${esc(newest.id)} ha incassato <b>${eur.format(newest.netCommon)}</b> netti con <b>${newest.ordersCommon}</b> vendite, contro `
+      + others.map(m => `<b>${eur.format(m.netCommon)}</b> e <b>${m.ordersCommon}</b> vendite di ${esc(m.id)}`).join(', ') + '.';
+  }
+  $('#headline').innerHTML = h;
+  const notes = [];
+  if (D.otherCur) notes.push(`Valute miste nel file (${D.currencies.join(', ')}): ${D.otherCur} righe non in EUR sono escluse dai totali.`);
+  if (D.refunded) notes.push(`${D.refunded} ${D.refunded === 1 ? 'riga rimborsata esclusa' : 'righe rimborsate escluse'} dai calcoli.`);
+  $('#notes').innerHTML = notes.map(n => `<p>${esc(n)}</p>`).join('');
+
+  // KPI
+  const kpi = (label, value, sub = '', warn = false) =>
+    `<div class="card p-4 sm:p-5 ${warn ? 'kpi-warn' : ''}"><div class="text-xs sm:text-sm muted">${label}</div>
+     <div class="num text-2xl sm:text-3xl font-semibold mt-1 ${warn ? 'warn' : ''}">${value}</div>${sub ? `<div class="text-xs muted mt-1">${sub}</div>` : ''}</div>`;
+  $('#kpis').innerHTML =
+    kpi('Vendite totali', tot.orders, `${mocs.length} MOC`) +
+    kpi('Incasso lordo', eur.format(tot.gross)) +
+    kpi('Netto (dopo commissione)', eur.format(tot.net), `commissioni ${eur.format(tot.gross - tot.net)}`) +
+    kpi('Commissioni da saldare', eur.format(tot.due), tot.due > 0 ? 'ancora da pagare a Rebrickable' : 'tutto saldato', tot.due > 0.004);
+
+  // card MOC
+  $('#mocs').style.gridTemplateColumns = `repeat(auto-fit, minmax(${mocs.length > 2 ? 260 : 300}px, 1fr))`;
+  $('#mocs').innerHTML = mocs.map(m => {
+    const cell = (l, v, warn) => `<div><div class="text-xs muted">${l}</div><div class="num font-medium mt-0.5 ${warn ? 'warn' : ''}">${v}</div></div>`;
+    return `<div class="card p-5 sm:p-6">
+      <div class="flex items-center gap-2 font-semibold">${mocLabel(m)}</div>
+      ${MOC_NAMES[m.id] ? `<div class="text-sm muted truncate mt-0.5">${esc(MOC_NAMES[m.id])}</div>` : ''}
+      <div class="text-sm muted mt-1">${eur.format(m.price)} · commissione ${Math.round(m.commissionPct*1000)/10}%</div>
+      <div class="flex items-baseline gap-2 mt-4"><span class="num text-5xl font-semibold" style="color:${color(m.ci)}">${m.orders}</span><span class="muted">vendite</span></div>
+      <div class="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-3 mt-5 pt-4 border-t line">
+        ${cell('Netto', eur.format(m.net))}
+        ${cell('Lordo', eur.format(m.gross))}
+        ${cell('Ultimi 30 giorni', m.orders30)}
+        ${cell('Ultima vendita', fmtDate(m.last))}
+        ${cell('Prima vendita', fmtDate(m.first))}
+        ${cell('Commissioni da saldare', eur.format(m.due), m.due > 0.004)}
+      </div></div>`;
+  }).join('');
+
+  document.querySelectorAll('.legend').forEach(el => el.innerHTML = mocs.map(m => `<span class="flex items-center gap-1.5">${mocLabel(m)}</span>`).join(''));
+
+  // tabella provenienza
+  $('#tbSpot').innerHTML = `<thead><tr><th>Sezione</th>${mocs.map(m => `<th class="r">${mocLabel(m)}</th>`).join('')}<th class="r">Totale</th></tr></thead><tbody>`
+    + D.spots.map(s => `<tr><td title="${esc(SPOT_LABELS[s.s] || s.s)}">${esc(SPOT_LABELS[s.s] || s.s)}${s.s ? ` <span class="muted text-xs">${esc(s.s)}</span>` : ''}</td>`
+      + mocs.map(m => `<td class="r num">${s.by[m.id] || '·'}</td>`).join('') + `<td class="r num font-medium">${s.total}</td></tr>`).join('')
+    + '</tbody>';
+
+  // ultime vendite
+  const byId = Object.fromEntries(mocs.map(m => [m.id, m]));
+  $('#tbLast').innerHTML = `<thead><tr><th>Ordine</th><th>Data</th><th>MOC</th><th>Paese</th><th class="r">Prezzo</th><th class="r">Netto</th><th>Sezione</th><th>Commissione saldata</th></tr></thead><tbody>`
+    + D.rows.slice(-15).reverse().map(r => `<tr>
+        <td class="num muted">${esc(r.order_number)}</td><td>${fmtDate(r.date)}</td><td>${mocLabel(byId[r.moc__set_num])}</td>
+        <td>${esc(r.buyer_country)}</td><td class="r num">${eur.format(r.c)}</td><td class="r num">${eur.format(r.net)}</td>
+        <td title="${esc(SPOT_LABELS[r.spot || ''] || r.spot)}">${esc(SPOT_LABELS[r.spot || ''] || r.spot)}</td>
+        <td>${r.is_commission_paid === 'True' ? '<span style="color:var(--ok)">Sì</span>' : '<span class="warn">No</span>'}</td></tr>`).join('')
+    + '</tbody>';
+
+  drawCharts();
+}
+
+function drawCharts(){
+  if (!state || $("#chMonthly").clientWidth < 120) return;
+  drawMonthly(state); drawCumul(state); drawCountries(state);
+}
+
+function drawMonthly(D){
+  const el = $('#chMonthly'); el.innerHTML = '';
+  const W = el.clientWidth, H = 260, M = {t:10, r:8, b:28, l:34};
+  const svg = d3.select(el).append('svg').attr('width', W).attr('height', H);
+  const x0 = d3.scaleBand().domain(D.months.map(m => m.key)).range([M.l, W - M.r]).paddingInner(0.25).paddingOuter(0.1);
+  const x1 = d3.scaleBand().domain(D.mocs.map(m => m.id)).range([0, x0.bandwidth()]).padding(0.08);
+  const max = d3.max(D.months, m => d3.max(D.mocs, k => m.by[k.id].orders)) || 1;
+  const y = d3.scaleLinear().domain([0, max]).nice().range([H - M.b, M.t]);
+  svg.append('g').attr('class','grid').attr('transform',`translate(${M.l},0)`).call(d3.axisLeft(y).ticks(5).tickSize(-(W-M.l-M.r)).tickFormat(''));
+  svg.append('g').attr('class','axis').attr('transform',`translate(${M.l},0)`).call(d3.axisLeft(y).ticks(5).tickSize(0).tickPadding(6)).call(g => g.select('.domain').remove());
+  const step = Math.ceil(D.months.length / Math.max(1, Math.floor((W - M.l) / 46)));
+  svg.append('g').attr('class','axis').attr('transform',`translate(0,${H - M.b})`)
+    .call(d3.axisBottom(x0).tickSize(0).tickPadding(8).tickFormat((k,i) => i % step ? '' : fmtMonth(k)));
+  const g = svg.append('g').selectAll('g').data(D.months).join('g').attr('transform', m => `translate(${x0(m.key)},0)`);
+  g.selectAll('rect').data(m => D.mocs.map(k => ({ k, v: m.by[k.id].orders })))
+    .join('rect').attr('x', d => x1(d.k.id)).attr('width', x1.bandwidth())
+    .attr('y', d => y(d.v)).attr('height', d => y(0) - y(d.v)).attr('rx', Math.min(3, x1.bandwidth()/2))
+    .attr('fill', d => color(d.k.ci));
+  // area sensibile per mese intero
+  g.append('rect').attr('x', -x0.step()*x0.paddingInner()/2).attr('width', x0.step()).attr('y', M.t).attr('height', H - M.t - M.b)
+    .attr('fill','transparent')
+    .on('mousemove', (ev, m) => showTip(ev, `<div class="font-semibold mb-1">${fmtMonth(m.key).replace(/ (\d\d)$/,' 20$1')}</div>` +
+      D.mocs.map(k => `<div class="flex justify-between gap-4"><span>${mocLabel(k)}</span><span class="num">${m.by[k.id].orders} · ${eur.format(m.by[k.id].net)}</span></div>`).join('')))
+    .on('mouseleave', hideTip);
+}
+
+function drawCumul(D){
+  const el = $('#chCumul'); el.innerHTML = '';
+  const W = el.clientWidth, H = 280, M = {t:14, r: W < 500 ? 62 : 78, b:28, l:46};
+  const svg = d3.select(el).append('svg').attr('width', W).attr('height', H);
+  const parse = d3.utcParse('%Y-%m-%d');
+  const x = d3.scaleUtc().domain([parse(D.rows[0].date), parse(D.lastAll)]).range([M.l, W - M.r]);
+  const y = d3.scaleLinear().domain([0, d3.max(D.mocs, m => m.net) || 1]).nice().range([H - M.b, M.t]);
+  svg.append('g').attr('class','grid').attr('transform',`translate(${M.l},0)`).call(d3.axisLeft(y).ticks(5).tickSize(-(W-M.l-M.r)).tickFormat(''));
+  svg.append('g').attr('class','axis').attr('transform',`translate(${M.l},0)`).call(d3.axisLeft(y).ticks(5).tickSize(0).tickPadding(6).tickFormat(v => v + ' €')).call(g => g.select('.domain').remove());
+  svg.append('g').attr('class','axis').attr('transform',`translate(0,${H - M.b})`)
+    .call(d3.axisBottom(x).ticks(Math.max(2, Math.floor(W / 110))).tickSize(0).tickPadding(8).tickFormat(d => `${MONTHS[d.getUTCMonth()]} ${String(d.getUTCFullYear()).slice(2)}`));
+  const line = d3.line().x(p => x(parse(p.date))).y(p => y(p.net)).curve(d3.curveStepAfter);
+  D.mocs.forEach(m => {
+    const pts = [{ date: m.first, net: 0, count: 0 }, ...m.cumul];
+    svg.append('path').attr('d', line(pts)).attr('fill','none').attr('stroke', color(m.ci)).attr('stroke-width', 2.2).attr('stroke-linejoin','round');
+    const last = m.cumul[m.cumul.length-1];
+    svg.append('circle').attr('cx', x(parse(last.date))).attr('cy', y(last.net)).attr('r', 3.5).attr('fill', color(m.ci));
+    svg.append('text').attr('x', x(parse(last.date)) + 7).attr('y', y(last.net) + 4).attr('fill', color(m.ci))
+      .attr('font-size', 12).attr('font-weight', 600).attr('class','num').text(eurShort(last.net));
+  });
+  // evita sovrapposizione delle etichette finali
+  const labels = svg.selectAll('text.num').nodes().sort((a,b) => +a.getAttribute('y') - +b.getAttribute('y'));
+  for (let i = 1; i < labels.length; i++){ const py = +labels[i-1].getAttribute('y'), cy = +labels[i].getAttribute('y'); if (cy - py < 14) labels[i].setAttribute('y', py + 14); }
+
+  const guide = svg.append('line').attr('y1', M.t).attr('y2', H - M.b).attr('stroke', 'var(--muted)').attr('stroke-dasharray','3 3').attr('opacity', 0);
+  svg.append('rect').attr('x', M.l).attr('y', M.t).attr('width', W - M.l - M.r).attr('height', H - M.t - M.b).attr('fill','transparent')
+    .on('mousemove', ev => {
+      const [mx] = d3.pointer(ev); const d = x.invert(mx).toISOString().slice(0,10);
+      guide.attr('x1', mx).attr('x2', mx).attr('opacity', .6);
+      showTip(ev, `<div class="font-semibold mb-1">${fmtDate(d)}</div>` + D.mocs.map(m => {
+        const p = [...m.cumul].reverse().find(p => p.date <= d);
+        return `<div class="flex justify-between gap-4"><span>${mocLabel(m)}</span><span class="num">${p ? `${eur.format(p.net)} · ${p.count} vend.` : '—'}</span></div>`;
+      }).join(''));
+    })
+    .on('mouseleave', () => { hideTip(); guide.attr('opacity', 0); });
+}
+
+function drawCountries(D){
+  const el = $('#chCountries'); el.innerHTML = '';
+  const data = D.countries.slice(0, 10);
+  const W = el.clientWidth, row = 26, M = {t:4, r:40, b:4, l:40}, H = M.t + M.b + data.length * row;
+  const svg = d3.select(el).append('svg').attr('width', W).attr('height', H);
+  const x = d3.scaleLinear().domain([0, d3.max(data, d => d.total) || 1]).range([M.l, W - M.r]);
+  const y = d3.scaleBand().domain(data.map(d => d.c)).range([M.t, H - M.b]).padding(0.28);
+  svg.append('g').attr('class','axis').attr('transform',`translate(${M.l},0)`).call(d3.axisLeft(y).tickSize(0).tickPadding(8)).call(g => g.select('.domain').remove());
+  const g = svg.append('g').selectAll('g').data(data).join('g');
+  g.each(function(d){
+    let x0 = 0; const sel = d3.select(this);
+    D.mocs.forEach(m => {
+      const v = d.by[m.id]; if (!v) return;
+      sel.append('rect').attr('x', x(x0)).attr('y', y(d.c)).attr('width', x(x0 + v) - x(x0)).attr('height', y.bandwidth()).attr('fill', color(m.ci));
+      x0 += v;
+    });
+    sel.append('text').attr('x', x(d.total) + 6).attr('y', y(d.c) + y.bandwidth()/2 + 4).attr('font-size', 12).attr('fill','var(--ink)').attr('class','num').text(d.total);
+    sel.append('rect').attr('x', 0).attr('y', y(d.c) - 3).attr('width', W).attr('height', y.bandwidth() + 6).attr('fill','transparent')
+      .on('mousemove', ev => showTip(ev, `<div class="font-semibold mb-1">${esc(d.c)} · ${d.total}</div>` +
+        D.mocs.map(m => `<div class="flex justify-between gap-4"><span>${mocLabel(m)}</span><span class="num">${d.by[m.id] || 0}</span></div>`).join('')))
+      .on('mouseleave', hideTip);
+  });
+}
+
+/* ---------- Caricamento ---------- */
+function load(records, source){
+  const D = compute(records);
+  if (D.empty){ showError('Nessuna vendita valida nel file.'); return; }
+  state = D;
+  $('#empty').classList.add('hidden'); $('#dash').classList.remove('hidden');
+  $('#updated').textContent = source;
+  render(D);
+}
+function showError(msg){
+  $('#dash').classList.add('hidden'); $('#empty').classList.remove('hidden');
+  const e = $('#error'); e.textContent = msg; e.classList.remove('hidden');
+}
+function loadPublished(){
+  const P = window.MOC_SALES;
+  if (!P || !P.rows){ $('#empty').classList.remove('hidden'); return false; }
+  const res = toRecords(P.columns, P.rows);
+  if (res.missing){ showError('Colonne mancanti nei dati pubblicati: ' + res.missing.join(', ')); return false; }
+  const d = new Date(P.updated);
+  load(res.records, 'Aggiornato il ' + d.toLocaleString('it-IT', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }));
+  $('#btnPublished').classList.add('hidden');
+  return true;
+}
+function readFile(file){
+  if (!file) return;
+  const fr = new FileReader();
+  fr.onload = () => {
+    const all = parseCSV(fr.result);
+    if (all.length < 2){ showError('Il file è vuoto o non è un CSV.'); return; }
+    const res = toRecords(all[0].map(h => h.trim()), all.slice(1));
+    if (res.missing){ showError('Nel CSV mancano queste colonne: ' + res.missing.join(', ')); return; }
+    load(res.records, `File locale: ${file.name} (solo su questo dispositivo)`);
+    if (window.MOC_SALES) $('#btnPublished').classList.remove('hidden');
+  };
+  fr.readAsText(file, 'utf-8');
+}
+
+$('#file').addEventListener('change', e => { readFile(e.target.files[0]); e.target.value = ''; });
+$('#btnPublished').addEventListener('click', loadPublished);
+const drop = $('#drop');
+drop.addEventListener('click', () => $('#file').click());
+['dragenter','dragover'].forEach(t => document.addEventListener(t, e => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave','drop'].forEach(t => document.addEventListener(t, e => { e.preventDefault(); if (t === 'drop' || e.target === document.documentElement) drop.classList.remove('over'); }));
+document.addEventListener('drop', e => readFile(e.dataTransfer.files[0]));
+let rz; addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(drawCharts, 120); });
+
+loadPublished();
+</script>
+</body>
+</html>
