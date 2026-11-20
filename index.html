@@ -5,7 +5,22 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Vendite MOC iTavix</title>
 <meta name="robots" content="noindex">
-<link rel="icon" href="logo.png">
+<meta name="theme-color" content="#f5f5f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Vendite MOC">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<script>
+  // tema: scelta salvata, altrimenti quello del sistema
+  (function(){ var t = null; try { t = localStorage.getItem("mocsales-theme"); } catch(e){}
+    if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t); })();
+</script>
 <script src="https://cdn.tailwindcss.com/3.4.16"></script>
 <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
 <script src="data.js" onerror="window.MOC_SALES=null"></script>
@@ -16,13 +31,21 @@
     --c0:#0071e3; --c1:#f56300; --c2:#30a14e; --c3:#a14fd3; --c4:#d6336c; --c5:#0f9fa8;
   }
   @media (prefers-color-scheme: dark){
-    :root{
+    :root:not([data-theme="light"]){
       --bg:#000000; --card:#1c1c1e; --ink:#f5f5f7; --muted:#98989d; --line:#2c2c2e; --grid:#262628;
       --warn:#ff9f0a; --warn-bg:#2b1d08; --ok:#32d74b;
       --c0:#2997ff; --c1:#ff8a30; --c2:#3dd166; --c3:#c27bf0; --c4:#ff5c8a; --c5:#33c6cf;
     }
   }
-  html,body{background:var(--bg);color:var(--ink);}
+:root[data-theme="dark"]{
+  --bg:#000000; --card:#1c1c1e; --ink:#f5f5f7; --muted:#98989d; --line:#2c2c2e; --grid:#262628;
+  --warn:#ff9f0a; --warn-bg:#2b1d08; --ok:#32d74b;
+  --c0:#2997ff; --c1:#ff8a30; --c2:#3dd166; --c3:#c27bf0; --c4:#ff5c8a; --c5:#33c6cf;
+  color-scheme:dark;
+}
+:root[data-theme="light"]{color-scheme:light}
+#btnTheme{width:34px;height:34px;padding:0;display:inline-flex;align-items:center;justify-content:center;color:var(--ink)}
+html,body{background:var(--bg);color:var(--ink);}
   body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Arial,sans-serif;-webkit-font-smoothing:antialiased;}
   .grid > *{min-width:0}
   #chMonthly,#chCumul,#chCountries{width:100%;overflow:hidden}
@@ -64,7 +87,8 @@
         <div id="updated" class="text-xs muted"></div>
       </div>
     </div>
-    <div class="flex gap-2 shrink-0">
+<div class="flex gap-2 shrink-0 items-center">
+  <button id="btnTheme" class="btn" type="button" aria-label="Tema scuro" title="Tema chiaro/scuro"></button>
       <button id="btnPublished" class="btn hidden">Dati pubblicati</button>
       <label class="btn cursor-pointer">Carica CSV<input id="file" type="file" accept=".csv,text/csv" class="hidden"></label>
     </div>
@@ -483,6 +507,26 @@ drop.addEventListener('click', () => $('#file').click());
 ['dragleave','drop'].forEach(t => document.addEventListener(t, e => { e.preventDefault(); if (t === 'drop' || e.target === document.documentElement) drop.classList.remove('over'); }));
 document.addEventListener('drop', e => readFile(e.dataTransfer.files[0]));
 let rz; addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(drawCharts, 120); });
+
+/* ---------- Tema chiaro/scuro ---------- */
+const ICON_MOON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>';
+const ICON_SUN = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.5" fill="currentColor"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>';
+const sysDark = matchMedia('(prefers-color-scheme: dark)');
+const isDark = () => (document.documentElement.getAttribute('data-theme') || (sysDark.matches ? 'dark' : 'light')) === 'dark';
+function syncTheme(){
+  const dk = isDark(), b = $('#btnTheme');
+  b.innerHTML = dk ? ICON_SUN : ICON_MOON;
+  b.setAttribute('aria-label', dk ? 'Passa al tema chiaro' : 'Passa al tema scuro');
+  document.querySelectorAll('meta[name="theme-color"]').forEach(m => { m.removeAttribute('media'); m.content = dk ? '#000000' : '#f5f5f7'; });
+}
+$('#btnTheme').addEventListener('click', () => {
+  const t = isDark() ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', t);
+  try { localStorage.setItem('mocsales-theme', t); } catch(e){}
+  syncTheme();
+});
+sysDark.addEventListener('change', syncTheme);
+syncTheme();
 
 loadPublished();
 </script>
