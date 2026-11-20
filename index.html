@@ -348,7 +348,7 @@ function drawCharts(){
 }
 
 function drawMonthly(D){
-  const el = $('#chMonthly'); el.innerHTML = '';
+  const el = $('#chMonthly'); el.innerHTML = ''; if (el.clientWidth < 120) return;
   const W = el.clientWidth, H = 260, M = {t:10, r:8, b:28, l:34};
   const svg = d3.select(el).append('svg').attr('width', W).attr('height', H);
   const x0 = d3.scaleBand().domain(D.months.map(m => m.key)).range([M.l, W - M.r]).paddingInner(0.25).paddingOuter(0.1);
@@ -374,7 +374,7 @@ function drawMonthly(D){
 }
 
 function drawCumul(D){
-  const el = $('#chCumul'); el.innerHTML = '';
+  const el = $('#chCumul'); el.innerHTML = ''; if (el.clientWidth < 120) return;
   const W = el.clientWidth, H = 280, M = {t:14, r: W < 500 ? 62 : 78, b:28, l:46};
   const svg = d3.select(el).append('svg').attr('width', W).attr('height', H);
   const parse = d3.utcParse('%Y-%m-%d');
@@ -411,7 +411,7 @@ function drawCumul(D){
 }
 
 function drawCountries(D){
-  const el = $('#chCountries'); el.innerHTML = '';
+  const el = $('#chCountries'); el.innerHTML = ''; if (el.clientWidth < 120) return;
   const data = D.countries.slice(0, 10);
   const W = el.clientWidth, row = 26, M = {t:4, r:40, b:4, l:40}, H = M.t + M.b + data.length * row;
   const svg = d3.select(el).append('svg').attr('width', W).attr('height', H);
