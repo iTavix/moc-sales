@@ -601,13 +601,27 @@ function refreshDone(t, err){
   refreshing = false; const b = $('#btnRefresh'); b.disabled = false; b.classList.remove('busy');
   refreshMsg(t, err);
 }
+const parseDataJs = t => JSON.parse(t.slice(t.indexOf('{'), t.lastIndexOf('}') + 1));
+// lettura immediata dal repo tramite l'id del commit (GitHub Pages ci mette ~40 s)
+async function loadFromCommit(sha, before){
+  refreshMsg('Carico i dati nuovi…');
+  for (let i = 0; i < 6; i++){
+    try {
+      const t = await fetch(`https://raw.githubusercontent.com/iTavix/moc-sales/${sha}/data.js`, { cache: 'no-store' }).then(r => r.ok ? r.text() : Promise.reject());
+      const j = parseDataJs(t);
+      if (j.updated && j.updated !== before){ window.MOC_SALES = j; loadPublished(); return refreshDone('Aggiornato adesso ✓'); }
+    } catch(e){}
+    await new Promise(r => setTimeout(r, 1500));
+  }
+  waitForData(before);
+}
 async function waitForData(before){
   refreshMsg('Pubblicazione dei dati nuovi…');
   for (let i = 0; i < 30; i++){
     await new Promise(r => setTimeout(r, 6000));
     try {
       const t = await fetch('data.js?t=' + Date.now(), { cache: 'no-store' }).then(r => r.text());
-      const j = JSON.parse(t.slice(t.indexOf('{'), t.lastIndexOf('}') + 1));
+      const j = parseDataJs(t);
       if (j.updated && j.updated !== before){
         window.MOC_SALES = j; loadPublished();
         return refreshDone('Aggiornato adesso ✓');
@@ -628,7 +642,11 @@ $('#btnRefresh').addEventListener('click', async () => {
     let msg = ''; try { msg = JSON.parse(ev.data).message || ''; } catch(e){ return; }
     if (msg === 'inizio'){ started = true; refreshMsg('Il Mac sta leggendo le vendite su Rebrickable…'); }
     else if (msg === 'attendi'){ started = true; es.close(); clearTimeout(timer); refreshDone('Aggiornamento appena fatto: riprova tra un paio di minuti.'); }
-    else if (msg.startsWith('ok')){ started = true; es.close(); clearTimeout(timer); waitForData(before); }
+    else if (msg.startsWith('ok')){
+      started = true; es.close(); clearTimeout(timer);
+      const sha = (msg.match(/\b[0-9a-f]{40}\b/) || [])[0];
+      sha ? loadFromCommit(sha, before) : waitForData(before);
+    }
     else if (msg.startsWith('errore')){ started = true; es.close(); clearTimeout(timer); refreshDone('Non aggiornato: ' + msg.replace(/^errore\s*/, ''), true); }
   };
   let sent = false;
