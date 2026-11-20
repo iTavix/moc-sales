@@ -72,23 +72,35 @@ html,body{background:var(--bg);color:var(--ink);}
   #drop{border:2px dashed var(--line);transition:border-color .15s,background .15s}
   #drop.over{border-color:var(--c0);background:color-mix(in srgb,var(--c0) 8%,transparent)}
   .btn{border:1px solid var(--line);border-radius:999px;padding:6px 14px;font-size:13px;background:var(--card)}
-  .btn:hover{border-color:var(--muted)}
+.btn:hover{border-color:var(--muted)}
+.btn:disabled{opacity:.6;cursor:default}
+#btnRefresh{display:inline-flex;align-items:center;gap:6px;color:var(--ink)}
+#btnRefresh.busy svg{animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+#refreshMsg.err{color:var(--warn)}
+.recent{background:linear-gradient(135deg,color-mix(in srgb,var(--c0) 11%,var(--card)) 0%,var(--card) 60%);border:1px solid color-mix(in srgb,var(--c0) 25%,transparent)}
+.delta{display:inline-flex;align-items:center;gap:2px;font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px}
+.delta.up{color:var(--ok);background:color-mix(in srgb,var(--ok) 14%,transparent)}
+.delta.down{color:var(--warn);background:color-mix(in srgb,var(--warn) 14%,transparent)}
+.delta.flat{color:var(--muted);background:color-mix(in srgb,var(--muted) 14%,transparent)}
 </style>
 </head>
 <body>
 <div id="tip"></div>
 <main class="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
 
-  <header class="flex items-center justify-between gap-4 mb-6">
-    <div class="flex items-center gap-3 min-w-0">
+  <header class="flex flex-wrap items-center justify-between gap-3 mb-6">
+    <div class="flex items-center gap-3 min-w-0 flex-1" style="min-width:240px">
       <img src="logo.png" alt="iTavix" class="h-9 w-auto shrink-0" onerror="this.remove()">
       <div class="min-w-0">
         <div class="text-xs uppercase tracking-wider muted">Rebrickable · MOC Sales</div>
         <div id="updated" class="text-xs muted"></div>
+        <div id="refreshMsg" class="text-xs muted" aria-live="polite"></div>
       </div>
     </div>
 <div class="flex gap-2 shrink-0 items-center">
-  <button id="btnTheme" class="btn" type="button" aria-label="Tema scuro" title="Tema chiaro/scuro"></button>
+<button id="btnRefresh" class="btn" type="button" title="Scarica adesso le ultime vendite da Rebrickable"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg><span>Aggiorna</span></button>
+<button id="btnTheme" class="btn" type="button" aria-label="Tema scuro" title="Tema chiaro/scuro"></button>
       <button id="btnPublished" class="btn hidden">Dati pubblicati</button>
       <label class="btn cursor-pointer">Carica CSV<input id="file" type="file" accept=".csv,text/csv" class="hidden"></label>
     </div>
@@ -110,6 +122,8 @@ html,body{background:var(--bg);color:var(--ink);}
       <h1 class="text-2xl sm:text-3xl font-semibold tracking-tight">Vendite MOC</h1>
       <div id="notes" class="mt-3 space-y-1 text-sm warn"></div>
     </div>
+
+    <div id="recent" class="card recent p-5 sm:p-6"></div>
 
     <div id="kpis" class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4"></div>
     <div id="mocs" class="grid gap-3 sm:gap-4"></div>
@@ -367,12 +381,78 @@ function render(D){
         <td>${r.is_commission_paid === 'True' ? '<span style="color:var(--ok)">Sì</span>' : '<span class="warn">No</span>'}</td></tr>`).join('')
     + '</tbody>';
 
+  renderRecent(D);
   drawCharts();
+}
+
+function recentStats(D, end){
+  const start = addDays(end, -29), pEnd = addDays(end, -30), pStart = addDays(end, -59);
+  const cur = D.rows.filter(r => r.date >= start && r.date <= end);
+  const prev = D.rows.filter(r => r.date >= pStart && r.date <= pEnd);
+  const sum = a => a.reduce((s,r) => s + r.net, 0);
+  const days = [];
+  for (let i = 29; i >= 0; i--) days.push({ d: addDays(end, -i), by: Object.fromEntries(D.mocs.map(m => [m.id, 0])) });
+  const ix = Object.fromEntries(days.map((x,i) => [x.d, i]));
+  cur.forEach(r => days[ix[r.date]].by[r.moc__set_num]++);
+  const cc = {}; cur.forEach(r => cc[r.buyer_country] = (cc[r.buyer_country] || 0) + 1);
+  const top = Object.entries(cc).sort((a,b) => b[1] - a[1])[0];
+  return { start, end, days, orders: cur.length, net: sum(cur), prevOrders: prev.length, prevNet: sum(prev),
+    byMoc: D.mocs.map(m => { const rs = cur.filter(r => r.moc__set_num === m.id); return { m, n: rs.length, net: sum(rs) }; }),
+    top, last: cur.length ? cur[cur.length-1] : null };
+}
+function deltaBadge(now, before){
+  if (!before) return now ? '<span class="delta up">nuovo</span>' : '<span class="delta flat">=</span>';
+  const p = Math.round((now - before) / before * 100);
+  if (p === 0) return '<span class="delta flat">= vs 30 gg prima</span>';
+  return `<span class="delta ${p > 0 ? 'up' : 'down'}">${p > 0 ? '▲' : '▼'} ${Math.abs(p)}%</span>`;
+}
+function renderRecent(D){
+  const R = D.recent = recentStats(D, D.end);
+  const big = (v, label, badge) => `<div><div class="flex items-baseline gap-2 flex-wrap"><span class="num text-4xl sm:text-5xl font-semibold">${v}</span>${badge}</div><div class="text-sm muted mt-1">${label}</div></div>`;
+  $('#recent').innerHTML = `
+    <div class="flex flex-wrap items-baseline justify-between gap-2">
+      <h2 class="text-lg font-semibold">Ultimi 30 giorni</h2>
+      <span class="text-sm muted">${fmtDate(R.start)} – ${fmtDate(R.end)}</span>
+    </div>
+    <div class="grid grid-cols-2 gap-4 mt-4">
+      ${big(R.orders, `vendite · ${R.prevOrders} nei 30 giorni prima`, deltaBadge(R.orders, R.prevOrders))}
+      ${big(eur.format(R.net), `netto · ${eur.format(R.prevNet)} nei 30 giorni prima`, deltaBadge(R.net, R.prevNet))}
+    </div>
+    <div class="flex flex-wrap gap-x-5 gap-y-2 mt-4 text-sm">
+      ${R.byMoc.map(b => `<span class="flex items-center gap-1.5">${mocLabel(b.m)} <b class="num">${b.n}</b> <span class="muted num">· ${eur.format(b.net)}</span></span>`).join('')}
+      ${R.top ? `<span class="muted">Paese top: <b style="color:var(--ink)">${esc(R.top[0])}</b> (${R.top[1]})</span>` : ''}
+      ${R.last ? `<span class="muted">Ultima vendita: <b style="color:var(--ink)">${fmtDate(R.last.date)}</b></span>` : ''}
+    </div>
+    <div id="chDaily" class="mt-4"></div>`;
+}
+function drawDaily(D){
+  const el = $('#chDaily'); if (!el) return; el.innerHTML = ''; if (el.clientWidth < 120) return;
+  const R = D.recent, W = el.clientWidth, H = 130, M = {t:8, r:18, b:22, l:24};
+  const svg = d3.select(el).append('svg').attr('width', W).attr('height', H);
+  const x = d3.scaleBand().domain(R.days.map(d => d.d)).range([M.l, W - M.r]).padding(0.22);
+  const max = d3.max(R.days, d => D.mocs.reduce((s,m) => s + d.by[m.id], 0)) || 1;
+  const y = d3.scaleLinear().domain([0, Math.max(2, max)]).nice().range([H - M.b, M.t]);
+  svg.append('g').attr('class','grid').attr('transform',`translate(${M.l},0)`).call(d3.axisLeft(y).ticks(Math.min(4, y.domain()[1])).tickSize(-(W-M.l-M.r)).tickFormat(''));
+  svg.append('g').attr('class','axis').attr('transform',`translate(${M.l},0)`).call(d3.axisLeft(y).ticks(Math.min(4, y.domain()[1])).tickFormat(d3.format('d')).tickSize(0).tickPadding(6)).call(g => g.select('.domain').remove());
+  const every = W < 500 ? 7 : 5;
+  svg.append('g').attr('class','axis').attr('transform',`translate(0,${H - M.b})`)
+    .call(d3.axisBottom(x).tickSize(0).tickPadding(7).tickFormat((d,i) => (29 - i) % every ? '' : fmtDate(d).replace(/ \d{4}$/, '')));
+  const g = svg.append('g').selectAll('g').data(R.days).join('g');
+  g.each(function(d){
+    let acc = 0; const sel = d3.select(this);
+    D.mocs.forEach(m => { const v = d.by[m.id]; if (!v) return;
+      sel.append('rect').attr('x', x(d.d)).attr('width', x.bandwidth()).attr('y', y(acc + v)).attr('height', y(acc) - y(acc + v)).attr('rx', 2).attr('fill', color(m.ci));
+      acc += v; });
+    if (!acc) sel.append('rect').attr('x', x(d.d)).attr('width', x.bandwidth()).attr('y', y(0) - 2).attr('height', 2).attr('fill', 'var(--line)');
+    sel.append('rect').attr('x', x(d.d) - x.step()*x.padding()/2).attr('width', x.step()).attr('y', M.t).attr('height', H - M.t - M.b).attr('fill','transparent')
+      .on('mousemove', ev => showTip(ev, `<div class="font-semibold mb-1">${fmtDate(d.d)}</div>` + (acc ? D.mocs.map(m => `<div class="flex justify-between gap-4"><span>${mocLabel(m)}</span><span class="num">${d.by[m.id]}</span></div>`).join('') : '<span class="muted">nessuna vendita</span>')))
+      .on('mouseleave', hideTip);
+  });
 }
 
 function drawCharts(){
   if (!state || $("#chMonthly").clientWidth < 120) return;
-  drawMonthly(state); drawCumul(state); drawCountries(state);
+  drawDaily(state); drawMonthly(state); drawCumul(state); drawCountries(state);
 }
 
 function drawMonthly(D){
@@ -463,9 +543,11 @@ function drawCountries(D){
 }
 
 /* ---------- Caricamento ---------- */
-function load(records, source){
+function load(records, source, endDate){
   const D = compute(records);
   if (D.empty){ showError('Nessuna vendita valida nel file.'); return; }
+  const today = new Date().toISOString().slice(0,10);
+  D.end = [endDate || today, D.lastAll].sort().pop();
   state = D;
   $('#empty').classList.add('hidden'); $('#dash').classList.remove('hidden');
   $('#updated').textContent = source;
@@ -481,7 +563,7 @@ function loadPublished(){
   const res = toRecords(P.columns, P.rows);
   if (res.missing){ showError('Colonne mancanti nei dati pubblicati: ' + res.missing.join(', ')); return false; }
   const d = new Date(P.updated);
-  load(res.records, 'Aggiornato il ' + d.toLocaleString('it-IT', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }));
+  load(res.records, 'Aggiornato il ' + d.toLocaleString('it-IT', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }), P.updated.slice(0,10));
   $('#btnPublished').classList.add('hidden');
   return true;
 }
@@ -507,6 +589,52 @@ drop.addEventListener('click', () => $('#file').click());
 ['dragleave','drop'].forEach(t => document.addEventListener(t, e => { e.preventDefault(); if (t === 'drop' || e.target === document.documentElement) drop.classList.remove('over'); }));
 document.addEventListener('drop', e => readFile(e.dataTransfer.files[0]));
 let rz; addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(drawCharts, 120); });
+
+/* ---------- Aggiornamento manuale ----------
+   Il tasto manda "aggiorna" su un canale ntfy.sh che il Mac ascolta: il Mac apre
+   Safari, estrae le vendite e pubblica data.js; qui si attende il file nuovo.
+   Sul canale passano solo messaggi di stato, mai dati di vendita. */
+const NTFY = 'https://ntfy.sh/itavix-mocsales-4aebbcc93d076649';
+let refreshing = false;
+function refreshMsg(t, err){ const m = $('#refreshMsg'); m.textContent = t; m.classList.toggle('err', !!err); }
+function refreshDone(t, err){
+  refreshing = false; const b = $('#btnRefresh'); b.disabled = false; b.classList.remove('busy');
+  refreshMsg(t, err);
+}
+async function waitForData(before){
+  refreshMsg('Pubblicazione dei dati nuovi…');
+  for (let i = 0; i < 30; i++){
+    await new Promise(r => setTimeout(r, 6000));
+    try {
+      const t = await fetch('data.js?t=' + Date.now(), { cache: 'no-store' }).then(r => r.text());
+      const j = JSON.parse(t.slice(t.indexOf('{'), t.lastIndexOf('}') + 1));
+      if (j.updated && j.updated !== before){
+        window.MOC_SALES = j; loadPublished();
+        return refreshDone('Aggiornato adesso ✓');
+      }
+    } catch(e){}
+  }
+  refreshDone('Dati estratti, ma la pubblicazione è lenta: ricarica la pagina tra qualche minuto.', true);
+}
+$('#btnRefresh').addEventListener('click', async () => {
+  if (refreshing) return;
+  refreshing = true; const b = $('#btnRefresh'); b.disabled = true; b.classList.add('busy');
+  const before = window.MOC_SALES && window.MOC_SALES.updated;
+  refreshMsg('Chiedo al Mac di aggiornare…');
+  let started = false;
+  const es = new EventSource(NTFY + '-stato/sse');
+  const timer = setTimeout(() => { if (!started){ es.close(); refreshDone('Il Mac non risponde: è spento o in stop. Riprova quando è acceso.', true); } }, 30000);
+  es.onmessage = ev => {
+    let msg = ''; try { msg = JSON.parse(ev.data).message || ''; } catch(e){ return; }
+    if (msg === 'inizio'){ started = true; refreshMsg('Il Mac sta leggendo le vendite su Rebrickable…'); }
+    else if (msg === 'attendi'){ started = true; es.close(); clearTimeout(timer); refreshDone('Aggiornamento appena fatto: riprova tra un paio di minuti.'); }
+    else if (msg.startsWith('ok')){ started = true; es.close(); clearTimeout(timer); waitForData(before); }
+    else if (msg.startsWith('errore')){ started = true; es.close(); clearTimeout(timer); refreshDone('Non aggiornato: ' + msg.replace(/^errore\s*/, ''), true); }
+  };
+  let sent = false;
+  es.onopen = () => !sent && (sent = true) && fetch(NTFY, { method: 'POST', body: 'aggiorna' })
+    .catch(() => { es.close(); clearTimeout(timer); refreshDone('Impossibile contattare il Mac (connessione assente?).', true); });
+});
 
 /* ---------- Tema chiaro/scuro ---------- */
 const ICON_MOON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>';
